@@ -1,47 +1,56 @@
-pipeline{
-	agent any
-	tools {
-		maven 'maven3'
-	}
-	stages{
-		stage('Clone the code from Git'){
-			steps{
-				echo "Its configured from Jenkins UI"
-			}
-		}
-		
-		stage('Build using maven'){
-			steps{
-				echo "Build using maven"
-				sh 'mvn clean package'
-			}
-		}
-		
-		stage('Build the docker image'){
-			steps{
-				echo "Build the docker image"
-				sh 'docker build . -t amiyaranjansahoo/dockerimg0700am:${BUILD_NUMBER}'
-			}
-		}
-		
-		stage('Login and pushed to Docker hub'){
-			steps{
-				withCredentials([string(credentialsId: 'dockerpwd', variable: 'dockerpassword')]) {
-				echo "Login and pushed to Docker hub"
-				sh "docker login -u amiyaranjansahoo -p ${dockerpassword}"
-				sh "docker push amiyaranjansahoo/dockerimg0700am:${BUILD_NUMBER}"
-				}
-			}
-		}
-		
-		stage('create the container in a remote server'){
-			steps{
-				echo "create the container in a remote server"
-				sshagent(['dockerssh']) {
-				sh "ssh -o StrictHostKeyChecking=no ec2-user@172.31.35.32 docker rm -f mycontainer"
-				sh "ssh -o StrictHostKeyChecking=no ec2-user@172.31.35.32 docker run -d -p 8080:8080 --name mycontainer amiyaranjansahoo/dockerimg0700am:${BUILD_NUMBER}"
-				}
-			}
-		}
-	}
+pipeline {
+  agent none
+  stages {
+      stage ('git-clone'){
+          agent any
+          steps {
+              git 'https://github.com/amiyaranjansahoo/docker-cicd-students-demo'
+          }
+      }
+    stage('Back-end') {
+      agent {
+        docker { image 'maven:3.8.1-adoptopenjdk-11' }
+      }
+      steps {
+        sh 'mvn clean package'
+      }
+    }
+    stage('Create the image') {
+        agent any
+            steps {
+                echo 'Create the image'
+				sh "docker build . -t yogeshpenumur/img:${BUILD_NUMBER}"
+            }
+        }
+    stage('push-docker'){
+    agent any
+    steps {
+        withCredentials([string(credentialsId: 'docker-cr', variable: 'DOCKER_PASS')]) {
+            sh "docker login -u yogeshpenumur2002@gmail.com -p ${DOCKER_PASS}"
+            sh "docker push yogeshpenumur/img:${BUILD_NUMBER}"
+        }
+    }
+}
+        stage('Create the container') {
+            agent any
+            steps {
+                echo 'Create the container'
+		    sh "docker rm -f mycontainer"		
+		    sh "docker run -d -p 9990:8080 --name mycontainer yogeshpenumur/img:${BUILD_NUMBER}"
+            }
+        }
+        
+    stage ('remote-server'){
+        agent any
+        steps {
+            sshagent(['tomcat-server']) {
+    sh '''
+        ssh -o StrictHostKeyChecking=no ubuntu@13.203.86.41 sudo docker pull yogeshpenumur/img:${BUILD_NUMBER}
+        ssh -o StrictHostKeyChecking=no ubuntu@13.203.86.41 sudo docker rm -f mycontainer || true
+        ssh -o StrictHostKeyChecking=no ubuntu@13.203.86.41 sudo docker run -d -p 8880:8080 --name mycontainer yogeshpenumur/img:${BUILD_NUMBER}
+    '''
+}
+        }
+    }
+  }
 }
